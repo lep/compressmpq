@@ -522,7 +522,8 @@ void PopulateListfile(const char *path){
     
     char *internalNames = strdup("(listfile);(attributes)");
     ReadListfile(&globals.listfile, &globals.inMpq.tbl, internalNames, strlen(internalNames));
-    free(internalNames);
+    // we can't free internalNames here because we compare the extracted names later
+    //free(internalNames);
 }
 
 void PrintHelp(char *name){
