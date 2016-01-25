@@ -7,31 +7,37 @@
 #include <string.h>
 
 
-typedef struct htentry_t {
+struct htentry {
     uint32_t hashA;
     uint32_t hashB;
     uint32_t _padding;
     uint32_t blockIndex;
-} htentry;
+} __attribute__((packed));
 
-typedef struct btentry_t {
+typedef struct htentry htentry_t;
+
+struct btentry {
     uint32_t filePos;
     uint32_t compressedSize;
     uint32_t normalSize;
     uint32_t flags;
-} btentry;
+} __attribute__((packed));
+
+typedef struct btentry btentry_t;
 
 
-typedef struct table_t {
+struct table {
     uint32_t htSize;
-    htentry *ht; //[65536];
+    htentry_t *ht; //[65536];
     
     uint32_t btSize;
-    btentry *bt; //[65536];
-} table;
+    btentry_t *bt; //[65536];
+};
+
+typedef struct table table_t;
 
 
-void InitTable(table *tbl, uint32_t numEntries);
-void Insert(table *tbl, const char *path, btentry *bte);
+void InitTable(table_t *tbl, uint32_t numEntries);
+void Insert(table_t *tbl, const char *path, btentry_t *bte);
 
 #endif

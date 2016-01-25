@@ -12,9 +12,9 @@ static uint32_t nextPowerOf2(uint32_t v){
     return v;
 }
 
-void InitTable(table *tbl, uint32_t numEntries){
-    tbl->ht = malloc(nextPowerOf2(numEntries)*sizeof(htentry));
-    tbl->bt = malloc(numEntries*sizeof(btentry));
+void InitTable(table_t *tbl, uint32_t numEntries){
+    tbl->ht = malloc(nextPowerOf2(numEntries) * sizeof(htentry_t));
+    tbl->bt = malloc(numEntries * sizeof(btentry_t));
     tbl->htSize = nextPowerOf2(numEntries);
     tbl->btSize = 0;
     for(uint32_t i = 0; i != tbl->htSize; i++){
@@ -27,12 +27,12 @@ void InitTable(table *tbl, uint32_t numEntries){
 }
 
 
-static uint32_t InsertBT(table *tbl, btentry *bte){
-    memcpy(&tbl->bt[tbl->btSize], bte, sizeof(btentry));
+static uint32_t InsertBT(table_t *tbl, btentry_t *bte){
+    memcpy(&tbl->bt[tbl->btSize], bte, sizeof(btentry_t));
     return tbl->btSize++;
 }
 
-static void InsertHT(table *tbl, const char *path, uint32_t btPos){
+static void InsertHT(table_t *tbl, const char *path, uint32_t btPos){
     uint32_t hashA = hash(path, HashA),
              hashB = hash(path, HashB),
              start = hash(path, HashOffset) % tbl->htSize,
@@ -51,6 +51,6 @@ static void InsertHT(table *tbl, const char *path, uint32_t btPos){
     tbl->ht[pos]._padding = 0;
 }
 
-void Insert(table *tbl, const char *path, btentry *bte){
+void Insert(table_t *tbl, const char *path, btentry_t *bte){
     InsertHT(tbl, path, InsertBT(tbl, bte));
 }

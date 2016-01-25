@@ -1,5 +1,5 @@
-CFLAGS = -O2 -std=c99
-LDFLAGS = -lm -pthread
+CFLAGS := -O2 -std=c99
+LDFLAGS := -lm -pthread
 
 ZOPFLI_OBJS := zopfli/blocksplitter.o zopfli/cache.o \
                 zopfli/deflate.o zopfli/gzip_container.o \
@@ -7,8 +7,6 @@ ZOPFLI_OBJS := zopfli/blocksplitter.o zopfli/cache.o \
                 zopfli/lz77.o zopfli/squeeze.o \
                 zopfli/tree.o zopfli/util.o \
                 zopfli/zlib_container.o zopfli/zopfli_lib.o
-
-HEADERS = table.h queue.h thread.h crypto.h listfile.h
 
 OBJS := crypto.o table.o listfile.o queue.o thread.o compress-mpq.o
 

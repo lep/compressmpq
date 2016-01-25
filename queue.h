@@ -3,13 +3,15 @@
 
 #include "thread.h"
 
-typedef struct queue {
+struct queue {
     size_t size;
     size_t cur;
     size_t elemSize;
     void *elements;
     sys_lock_t lock;
-} queue_t;
+};
+
+typedef struct queue queue_t;
 
 void InitQueue(queue_t *q, void *elems, size_t size, size_t elemSize);
 void *pop(queue_t *q, size_t *status);

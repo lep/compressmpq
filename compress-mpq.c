@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
-//#include <unistd.h>
 
 #include "zopfli/zopfli.h"
 #include "miniz.c"
@@ -34,14 +33,14 @@ struct header {
     uint32_t btPos;
     uint32_t htSize;
     uint32_t btSize;
-};
+} __attribute__((packed));
 
-typedef struct header header;
+typedef struct header header_t;
 
 struct {
     FILE *mpq_file;
     sys_lock_t lock;
-    table mpq_table;
+    table_t mpq_table;
     queue_t work_queue;
     size_t bytesWritten;
     size_t totalInSize;
@@ -56,8 +55,8 @@ struct {
         char *file;
         size_t size;
         char *mpq;
-        header hd;
-        table tbl;
+        header_t hd;
+        table_t tbl;
         uint32_t offset;
     } inMpq;
     
@@ -103,22 +102,22 @@ char* strtok_l(char *in, char *delim, size_t size){
     return NULL;
 }
 
-uint32_t FindHeader(char *file, size_t size, header *hd){
+uint32_t FindHeader(char *file, size_t size, header_t *hd){
     for(uint32_t offset = 0; offset < size; offset += 0x200){
         if(!strncmp("MPQ\x1a", file+offset, 4)){
-            *hd = *(header*)(file+offset);
+            *hd = *(header_t*)(file+offset);
             return offset;
         }
     }
     return (uint32_t)(-1);
 }
 
-btentry* FindBTE(table *tbl, const char *path){
+btentry_t* FindBTE(table_t *tbl, const char *path){
     uint32_t hashA = hash(path, HashA),
              hashB = hash(path, HashB),
              start = hash(path, HashOffset) % tbl->htSize,
              pos = start;
-    htentry *ht = tbl->ht;
+    htentry_t *ht = tbl->ht;
     while(ht[pos].blockIndex != 0xFFFFFFFF){
         if(ht[pos].hashA == hashA && ht[pos].hashB == hashB){
             return &tbl->bt[ht[pos].blockIndex];
@@ -147,8 +146,8 @@ char* GetFileName(char *path){
         return path;
 }
 
-char* ExtractFile(char *mpq, header *hd, table *tbl, char *path, size_t *out){
-    btentry *bte = FindBTE(tbl, path);
+char* ExtractFile(char *mpq, header_t *hd, table_t *tbl, char *path, size_t *out){
+    btentry_t *bte = FindBTE(tbl, path);
     if(!bte){
         return NULL;
     }
@@ -319,12 +318,12 @@ void ConvertSlashes(char *path){
     }
 }
 
-void ReadListfile(listfile_t *listfile, table *tbl, char *content, size_t size){
+void ReadListfile(listfile_t *listfile, table_t *tbl, char *content, size_t size){
     char delim[] = "\r\n;";
     char *result = NULL;
     result = strtok_l(content, delim, size);
     while(result != NULL){
-        btentry *bte;
+        btentry_t *bte;
         if((bte = FindBTE(tbl, result)) != NULL){
             AddPath(listfile, hash(result, HashA), hash(result, HashB), result);
         }
@@ -332,9 +331,9 @@ void ReadListfile(listfile_t *listfile, table *tbl, char *content, size_t size){
     }
 }
 
-int ListfileSufficient(table *tbl, listfile_t *listfile){
+int ListfileSufficient(table_t *tbl, listfile_t *listfile){
     for(uint32_t i = 0; i != tbl->htSize; i++){
-        htentry hte = tbl->ht[i];
+        htentry_t hte = tbl->ht[i];
         if(hte.blockIndex != 0xffffffff && hte.blockIndex != 0xfffffffe){
             if(!FindPath(listfile, hte.hashA, hte.hashB))
                 return 0;
@@ -412,7 +411,7 @@ void PackFiles(void *arguments){
 
         fwrite(out, outsize, 1, globals.mpq_file);
         
-        btentry bte;
+        btentry_t bte;
         bte.filePos = globals.bytesWritten;
         bte.compressedSize = outsize;
         bte.normalSize = insize;
@@ -485,20 +484,26 @@ void CopyPreMPQData(){
 
 void ReadInMpq(const char *path){
     globals.inMpq.file = Sys_ReadFile(path, &globals.inMpq.size);
-    globals.inMpq.offset = FindHeader(globals.inMpq.file, globals.inMpq.size, &globals.inMpq.hd);
+    globals.inMpq.offset = FindHeader( globals.inMpq.file
+                                     , globals.inMpq.size
+                                     , &globals.inMpq.hd );
     if(globals.inMpq.offset == (uint32_t)(-1)){
         fprintf(stderr, "%s doesn't seem to be a mpq file\n", path);
         exit(1);
     }
     globals.inMpq.mpq = globals.inMpq.file + globals.inMpq.offset;
     
-    DecryptBlock(globals.inMpq.mpq + globals.inMpq.hd.htPos, sizeof(htentry) * globals.inMpq.hd.htSize, hash("(hash table)", TableKey));
-    DecryptBlock(globals.inMpq.mpq + globals.inMpq.hd.btPos, sizeof(btentry) * globals.inMpq.hd.btSize, hash("(block table)", TableKey));
+    DecryptBlock( globals.inMpq.mpq + globals.inMpq.hd.htPos
+                , sizeof(htentry_t) * globals.inMpq.hd.htSize
+                , hash("(hash table)", TableKey) );
+    DecryptBlock( globals.inMpq.mpq + globals.inMpq.hd.btPos
+                , sizeof(btentry_t) * globals.inMpq.hd.btSize
+                , hash("(block table)", TableKey));
     
     globals.inMpq.tbl.htSize = globals.inMpq.hd.htSize;
     globals.inMpq.tbl.btSize = globals.inMpq.hd.btSize;
-    globals.inMpq.tbl.ht = (htentry*)(globals.inMpq.mpq + globals.inMpq.hd.htPos);
-    globals.inMpq.tbl.bt = (btentry*)(globals.inMpq.mpq + globals.inMpq.hd.btPos);
+    globals.inMpq.tbl.ht = (htentry_t*)(globals.inMpq.mpq + globals.inMpq.hd.htPos);
+    globals.inMpq.tbl.bt = (btentry_t*)(globals.inMpq.mpq + globals.inMpq.hd.btPos);
 }
 
 void PopulateListfile(const char *path){
