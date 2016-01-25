@@ -1,4 +1,4 @@
-CFLAGS := -O2 -std=c99
+CFLAGS := -O3 -std=c99
 LDFLAGS := -lm -pthread
 
 ZOPFLI_OBJS := zopfli/blocksplitter.o zopfli/cache.o \
@@ -12,9 +12,11 @@ OBJS := crypto.o table.o listfile.o queue.o thread.o compress-mpq.o
 
 .PHONY: clean
 
-
 compress-mpq: $(OBJS) $(ZOPFLI_OBJS)
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^
+
+%.o: %.c %.h
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
 	rm -f $(OBJS) $(ZOPFLI_OBJS) compress-mpq

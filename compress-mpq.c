@@ -525,16 +525,12 @@ void PopulateListfile(const char *path){
 }
 
 void PrintHelp(char *name){
-    printf("Usage: %s [--threads | -t THREADS] [--iterations | -i ITERATIONS] [--listfile | -l listfile] [--shift-size | -s shiftsize] [--block-splitting-max iterations] [--block-splitting-last] in-file out-file\n", name);
+    printf("Usage: %s [--threads | -t THREADS] [--iterations | -i ITERATIONS] [--listfile | -l listfile] [--shift-size | -s shiftsize] [--block-splitting-max iterations] in-file out-file\n", name);
     printf("  in-file:                The input mpq\n");
     printf("  out-file:               The compressed mpq\n");
     printf("  --threads,  -t:         How many threads are started. Default: 2.\n");
     printf("  --iterations, -i:       How many iterations are spent on compressing every file. Default 15.\n");
     printf("  --shift-size, -s:       Sets the Blocksize to 512*2^shiftsize. Default shiftsize: 15\n");
-    printf("  --block-splitting-last: If true, chooses the optimal block split points only after doing the iterative\n" 
-           "                          LZ77 compression. If false, chooses the block split points first, then does\n"
-           "                          iterative LZ77 on each individual block. Depending on the file, either first\n"
-           "                          or last gives the best compression. Default: false \n");
     printf("  --block-splitting-max:  Maximum amount of blocks to split into (0 for unlimited, but this can give\n"
            "                          extreme results that hurt compression on some files). Default value: 15.\n");
     printf("  --help, -h:             Prints this help.\n");
@@ -549,7 +545,6 @@ int main(int argc, char **argv){
     globals.zopfli_options.verbose_more = 0;
     globals.zopfli_options.numiterations = 15;
     globals.zopfli_options.blocksplitting = 1;
-    globals.zopfli_options.blocksplittinglast = 0;
     globals.zopfli_options.blocksplittingmax  = 15;
     
     globals.filesProceeded = 1;
@@ -610,9 +605,6 @@ int main(int argc, char **argv){
                 exit(0);
             }
             
-        } else if(!strcmp("--block-splitting-last", argv[arg])){
-            arg++;
-            globals.zopfli_options.blocksplittinglast = 1;
         } else if (!strcmp("--help", argv[arg]) || !strcmp("-h", argv[arg])){
             PrintHelp(argv[0]);
             exit(0);
