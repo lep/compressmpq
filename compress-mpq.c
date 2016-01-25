@@ -181,7 +181,7 @@ char* ExtractFile(char *mpq, header_t *hd, table_t *tbl, char *path, size_t *out
             DecryptBlock(file, bte->compressedSize, baseKey);
         if(*fileInMpq != 2){
             // we don't handle anything but zlib compression
-            fprintf(stderr, "Cannot decompress non-zlib compressed file\n");
+            fprintf(stderr, "Cannot decompress non-zlib compressed file '%s' (%d)\n", path, *fileInMpq);
             free(file);
             return NULL;
         }
@@ -215,7 +215,7 @@ char* ExtractFile(char *mpq, header_t *hd, table_t *tbl, char *path, size_t *out
                 memcpy(file+offset, fileInMpq+sectorOffsetTable[idx], size);
             }else{
                 if(fileInMpq[sectorOffsetTable[idx]] != 2){
-                    fprintf(stderr, "Cannot decompress non-zlib compressed file (%d)\n", *(fileInMpq+sectorOffsetTable[idx]));
+                    fprintf(stderr, "Cannot decompress non-zlib compressed file '%s' (%d)\n", path, *(fileInMpq+sectorOffsetTable[idx]));
                     free(file);
                     return NULL;
                 }
@@ -520,8 +520,9 @@ void PopulateListfile(const char *path){
         ReadListfile(&globals.listfile, &globals.inMpq.tbl, listfile, listfile_size);
     }
     
-    char *internalNames = "(listfile);(attributes)";
+    char *internalNames = strdup("(listfile);(attributes)");
     ReadListfile(&globals.listfile, &globals.inMpq.tbl, internalNames, strlen(internalNames));
+    free(internalNames);
 }
 
 void PrintHelp(char *name){
