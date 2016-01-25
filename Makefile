@@ -1,4 +1,5 @@
-CFLAGS = -lm -O2 -std=c99 -DWIN32
+CFLAGS = -O2 -std=c99
+LDFLAGS = -lm -pthread
 
 ZOPFLILIB_SRC = zopfli/blocksplitter.c zopfli/cache.c\
                 zopfli/deflate.c zopfli/gzip_container.c\
@@ -9,14 +10,14 @@ ZOPFLILIB_SRC = zopfli/blocksplitter.c zopfli/cache.c\
 
 HEADERS = table.h queue.h thread.h crypto.h listfile.h
 
-compress-mpq: thread.c compress-mpq.c $(ZOPFLILIB_SRC) miniz.c $(HEADERS)
-	$(CC) $(CFLAGS) $(ZOPFLILIB_SRC) thread.c compress-mpq.c -o compress-mpq 
+OBJS := crypto.o table.o listfile.o queue.o thread.o compress-mpq.o
 
-release: compress compress-src.tar
+.PHONY: clean
 
 
-compress.exe: compress-mpq
-	./upx --best --ultra-brute -o compress.exe compress-mpq.exe
+compress-mpq: $(OBJS) $(ZOPFLILIB_SRC)
+	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^
 
-compress-src.tar:
-	tar cf compress-src.tar thread.c compress-mpq.c miniz.c $(HEADERS) $(ZOPFLILIB_SRC) Makefile
+clean:
+	rm -f $(OBJS) compress-mpq
+
