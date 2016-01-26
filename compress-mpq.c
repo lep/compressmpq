@@ -10,6 +10,9 @@
 
 #include "zopfli/zopfli.h"
 #include "miniz.c"
+#include "Adpcm/adpcm.h"
+#include "Huffman/huff-c.h"
+#include "Pklib/pklib.h"
 
 #include "thread.h"
 #include "table.h"
@@ -146,6 +149,70 @@ char* GetFileName(char *path){
         return path;
 }
 
+enum DecompressError {
+    Ok = 0,
+    ZlibError = 1,
+    HuffmanError = 2,
+    PklibError = 3,
+    AdpcmError = 4
+};
+
+int decompress(void *outBuf, size_t *outLen, void *inBuf, size_t inSize){
+    uint8_t whatComp = *(uint8_t*)inBuf;
+    inBuf++;
+    void *tmpBuf = outBuf;
+    size_t *tmpLen = outLen;
+    if(whatComp & 0x02){
+//int mz_uncompress(unsigned char *pDest, mz_ulong *pDest_len, const unsigned char *pSource, mz_ulong source_len);
+        int err = mz_uncompress(tmpBuf, (mz_ulong*)tmpLen, inBuf, (mz_ulong)inSize);
+        if(MZ_OK != err){
+            return ZlibError;
+        }
+        inBuf = tmpBuf;
+        inSize = *tmpLen;
+    }
+    if(whatComp & 0x08){
+//int DecompressPKLIB(void * pvOutBuffer, int * pcbOutBuffer, void * pvInBuffer, int cbInBuffer);
+        if(0 == DecompressPKLIB(tmpBuf, (int*)tmpLen, inBuf, inSize)){
+            return PklibError;
+        }
+        inBuf = tmpBuf;
+        inSize = *tmpLen;
+    }
+    if(whatComp & 0x40){
+//int  DecompressADPCM(void * pvOutBuffer, int dwOutLength, void * pvInBuffer, int dwInLength, int ChannelCount);
+        size_t outSizeTmp = DecompressADPCM(tmpBuf, *tmpLen, inBuf, inSize, 1);
+        if(0 == outSizeTmp){
+            return AdpcmError;
+        }
+		inBuf = tmpBuf;
+		*tmpLen = outSizeTmp;
+        inSize = *tmpLen;
+    }
+    if(whatComp & 0x80){
+//int  DecompressADPCM(void * pvOutBuffer, int dwOutLength, void * pvInBuffer, int dwInLength, int ChannelCount);
+        size_t outSizeTmp = DecompressADPCM(tmpBuf, *tmpLen, inBuf, inSize, 2);
+        if(0 == outSizeTmp){
+            return AdpcmError;
+        }
+		inBuf = tmpBuf;
+		*tmpLen = outSizeTmp;
+        inSize = *tmpLen;
+	}
+    if(whatComp & 0x01){
+//int DecompressHuffman(void * pvOutBuffer, int * pcbOutBuffer, void * pvInBuffer, int cbInBuffer);
+		if(0 == DecompressHuffman(tmpBuf, (int*)tmpLen, inBuf, inSize)){
+            return HuffmanError;
+        }
+		inBuf = tmpBuf;
+		inSize = *tmpLen;
+	}
+
+    return Ok;
+
+}
+//int DecompressHuffman(void * pvOutBuffer, int * pcbOutBuffer, void * pvInBuffer, int cbInBuffer);
+
 char* ExtractFile(char *mpq, header_t *hd, table_t *tbl, char *path, size_t *out){
     btentry_t *bte = FindBTE(tbl, path);
     if(!bte){
@@ -160,7 +227,7 @@ char* ExtractFile(char *mpq, header_t *hd, table_t *tbl, char *path, size_t *out
     char *fileInMpq = mpq+bte->filePos;
     if(out)
         *out = bte->normalSize;
-    mz_ulong destLen;
+    size_t destLen;
 
     if(bte->flags & FLAG_FILE_SINGLE_UNIT && !(bte->flags & FLAG_FILE_COMPRESSED)){
         memcpy(file, fileInMpq, bte->normalSize);
@@ -179,14 +246,13 @@ char* ExtractFile(char *mpq, header_t *hd, table_t *tbl, char *path, size_t *out
     }else if(bte->flags & FLAG_FILE_SINGLE_UNIT && bte->flags & FLAG_FILE_COMPRESSED){
         if(encrypted)
             DecryptBlock(file, bte->compressedSize, baseKey);
-        if(*fileInMpq != 2){
-            // we don't handle anything but zlib compression
-            fprintf(stderr, "Cannot decompress non-zlib compressed file '%s' (%d)\n", path, *fileInMpq);
+
+        int err = decompress(file, &destLen, fileInMpq, bte->compressedSize-1);
+        if(Ok != err){
+            fprintf(stderr, "Error while decompressing '%s' (%d, %d)\n", path, *fileInMpq, err);
             free(file);
             return NULL;
         }
-        destLen = bte->normalSize;
-        mz_uncompress(file, &destLen, fileInMpq+1, (mz_ulong)(bte->compressedSize-1));
         
     }else{
         // we've got a sector offset table
@@ -205,6 +271,8 @@ char* ExtractFile(char *mpq, header_t *hd, table_t *tbl, char *path, size_t *out
             // in case of strange errors: check this
             if(idx == numSectors -2) // last sector so the size can be less than sectorSize
                 thisSectorSize = bte->normalSize % sectorSize;
+            if(thisSectorSize == 0)
+                thisSectorSize = sectorSize;
             destLen = thisSectorSize;
             
             if(encrypted)
@@ -214,12 +282,12 @@ char* ExtractFile(char *mpq, header_t *hd, table_t *tbl, char *path, size_t *out
                 // this sector is not compressed
                 memcpy(file+offset, fileInMpq+sectorOffsetTable[idx], size);
             }else{
-                if(fileInMpq[sectorOffsetTable[idx]] != 2){
-                    fprintf(stderr, "Cannot decompress non-zlib compressed file '%s' (%d)\n", path, *(fileInMpq+sectorOffsetTable[idx]));
+                int err = decompress(file+offset, &destLen, fileInMpq+sectorOffsetTable[idx], size);
+                if(Ok != err){
+                    fprintf(stderr, "Error while decompressing '%s' (%d, %d)\n", path, *(fileInMpq+sectorOffsetTable[idx]), err);
                     free(file);
                     return NULL;
                 }
-                mz_uncompress(file+offset, &destLen, fileInMpq+sectorOffsetTable[idx]+1, (mz_ulong)(size-1));
             }
             offset += sectorSize;
         }

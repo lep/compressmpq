@@ -1,4 +1,5 @@
 CFLAGS := -O3 -std=c99
+CXXFLAGS := -O3
 LDFLAGS := -lm -pthread
 
 ZOPFLI_OBJS := zopfli/blocksplitter.o zopfli/cache.o \
@@ -8,16 +9,21 @@ ZOPFLI_OBJS := zopfli/blocksplitter.o zopfli/cache.o \
                 zopfli/tree.o zopfli/util.o \
                 zopfli/zlib_container.o zopfli/zopfli_lib.o
 
+ENCODING_OBJS := Adpcm/adpcm.o Huffman/huff.o Pklib/pklib.o Pklib/explode.o
+
 OBJS := crypto.o table.o listfile.o queue.o thread.o compress-mpq.o
 
 .PHONY: clean
 
-compress-mpq: $(OBJS) $(ZOPFLI_OBJS)
+compress-mpq: $(OBJS) $(ZOPFLI_OBJS) $(ENCODING_OBJS)
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+%.o: %.cpp %.h
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 clean:
-	rm -f $(OBJS) $(ZOPFLI_OBJS) compress-mpq
+	rm -f $(OBJS) $(ZOPFLI_OBJS) $(ENCODING_OBJS) compress-mpq
 
