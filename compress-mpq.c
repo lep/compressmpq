@@ -494,12 +494,12 @@ void PackFiles(void *arguments){
         
         size_t status = globals.filesProceeded++;
         
-        Sys_Unlock(globals.lock);
+        printf("@%d [%d/%d] Finished %s (%f)\n", threadId, status, globals.work_queue.size, *path, (float)outsize/insize);
         
+        Sys_Unlock(globals.lock);
         
         free(content);
         free(out);
-        printf("@%d [%d/%d] Finished %s (%f)\n", threadId, status, globals.work_queue.size, *path, (float)outsize/insize);
     }
 
 }
