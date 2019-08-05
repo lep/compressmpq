@@ -28,7 +28,7 @@ release: compress-mpq
 
 compress-mpq: $(OBJS) $(ZOPFLI_OBJS) $(ENCODING_OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
-
+ 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
