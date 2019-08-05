@@ -1,3 +1,5 @@
 *.o
 *.sw*
 compress-mpq
+*.exe
+.gitignore

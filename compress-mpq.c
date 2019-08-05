@@ -412,7 +412,7 @@ int ListfileSufficient(table_t *tbl, listfile_t *listfile){
 }
 
 
-void PackFile(char *path, unsigned char *content, size_t contentSize, size_t bufferSize, unsigned char *out, size_t *outsize, uint32_t *flags){
+void PackFile(unsigned char *content, size_t contentSize, size_t bufferSize, unsigned char *out, size_t *outsize, uint32_t *flags){
     unsigned char *zopfli_out;
     size_t zopfli_outsize;
     ZopfliFormat format = ZOPFLI_FORMAT_ZLIB;
@@ -473,7 +473,7 @@ void PackFiles(void *arguments){
         unsigned char *out = malloc(insize + sotSize);
         uint32_t flags;
 
-        PackFile(*path, (unsigned char*)content, insize, insize + sotSize, out, &outsize, &flags);
+        PackFile((unsigned char*)content, insize, insize + sotSize, out, &outsize, &flags);
 
         Sys_Lock(globals.lock);
 
