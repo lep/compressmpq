@@ -9,7 +9,7 @@
 #include <math.h>
 
 #include "zopfli/zopfli.h"
-#include "miniz.c"
+#include "miniz.h"
 #include "Adpcm/adpcm.h"
 #include "Huffman/huff-c.h"
 #include "Pklib/pklib.h"
