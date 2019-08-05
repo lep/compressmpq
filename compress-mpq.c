@@ -9,7 +9,7 @@
 #include <math.h>
 
 #include "zopfli/zopfli.h"
-#include "miniz.c"
+#include "miniz.h"
 #include "Adpcm/adpcm.h"
 #include "Huffman/huff-c.h"
 #include "Pklib/pklib.h"
@@ -587,9 +587,16 @@ void PopulateListfile(const char *path){
         printf("Found internal listfile.\n");
         ReadListfile(&globals.listfile, &globals.inMpq.tbl, listfile, listfile_size);
     }
+
     
-    char *internalNames = strdup("(listfile);(attributes)");
+    char *internalNames = calloc(1, 24);
+    memcpy(internalNames, "(listfile);(attributes)", 24);
     ReadListfile(&globals.listfile, &globals.inMpq.tbl, internalNames, strlen(internalNames));
+
+    // for some bloody reason it doesnt work with strdup on windows/msys/cygwin
+    // so we use the above way
+    // char *internalNames = strdup("(listfile);(attributes)");
+    //ReadListfile(&globals.listfile, &globals.inMpq.tbl, internalNames, strlen(internalNames));
     // we can't free internalNames here because we compare the extracted names later
     //free(internalNames);
 }
@@ -709,6 +716,7 @@ int main(int argc, char **argv){
         fprintf(stderr, "Insufficient listfile.\n");
         exit(0);
     }
+
     
     InitTable(&globals.mpq_table, globals.inMpq.tbl.btSize);
     
