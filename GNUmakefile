@@ -1,6 +1,6 @@
 CFLAGS := -O3 -std=c99
 CXXFLAGS := -O3
-LDFLAGS := -lm -pthread
+LDFLAGS := -lm -pthread -lstdc++
 
 ZOPFLI_OBJS := zopfli/blocksplitter.o zopfli/cache.o \
                 zopfli/deflate.o zopfli/gzip_container.o \
@@ -16,7 +16,7 @@ OBJS := crypto.o table.o listfile.o queue.o thread.o compress-mpq.o
 .PHONY: clean all prof debug
 all: compress-mpq
 
-prof: CFLAGS = -w -pg -std=c99 -DWIN32
+prof: CFLAGS = -w -pg -std=c99
 prof: CXXFLAGS = -w -pg
 prof: compress-mpq
 
@@ -25,7 +25,7 @@ debug: CXXFLAGS = -w -g
 debug: compress-mpq
 
 compress-mpq: $(OBJS) $(ZOPFLI_OBJS) $(ENCODING_OBJS)
-	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c -o $@ $<
