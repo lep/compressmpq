@@ -1,6 +1,6 @@
-CFLAGS := -std=c99 -w -g -static
-CXXFLAGS := -w -g -static
-LDFLAGS := -static -lm -lpthread -lstdc++
+CFLAGS := -std=c99 -w -g
+CXXFLAGS := -w -g
+LDFLAGS :=  -lm -lpthread -lstdc++
 
 ZOPFLI_OBJS := zopfli/blocksplitter.o zopfli/cache.o \
                 zopfli/deflate.o zopfli/gzip_container.o \
