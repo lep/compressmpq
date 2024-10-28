@@ -21,6 +21,12 @@
 #include "queue.h"
 #include "listfile.h"
 
+
+#if defined(_WIN32)
+#include <direct.h>
+#define mkdir(dir, mode) _mkdir(dir)
+#endif
+
 #define FLAG_FILE_ENCRYPTED     (0x00010000)
 #define FLAG_FILE_KEY_ADJUSTED  (0x00020000)
 #define FLAG_FILE_SINGLE_UNIT   (0x01000000)
@@ -544,7 +550,7 @@ void InitCache() {
     struct stat st = {0};
     
     if (stat("./cache", &st) == -1) {
-        if (mkdir("./cache") != 0) {
+        if (mkdir("./cache", 0755) != 0) {
             perror("Failed to create cache directory");
             exit(EXIT_FAILURE);
         }
