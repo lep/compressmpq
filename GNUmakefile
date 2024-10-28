@@ -22,8 +22,8 @@ prof: compress-mpq
 
 release: CFLAGS = -O3 -std=c99 -Doff64_t=_off64_t -DPTW32_STATIC_LIB -FORCEWIN
 release: CXXFLAGS = -O3 -Doff64_t=_off64_t -DPTW32_STATIC_LIB -FORCEWIN
-release: CC = mingw32-gcc
-release: CXX = mingw32-g++
+release: CC = i686-w64-mingw32-gcc
+release: CXX = i686-w64-mingw32-g++
 release: compress-mpq
 
 compress-mpq: $(OBJS) $(ZOPFLI_OBJS) $(ENCODING_OBJS)
