@@ -36,6 +36,7 @@ So you should use this tool as your last step in publishing your map.
 
 Option	| Default | Explanation
 --------|---------|------------
+--cache, -c | not set | Uses a persistent read-write cache.
 --threads, -t | 2 | The number of threads that are started. A good value would be the number of cores your CPU has.
 --iterations, -i | 15 | How many iterations are spent on compressing every file. Increasing this slows down the tool even further.
 --listfile, -l | not set | Additional listfile if the map internal listfile is not sufficient/non existent.
@@ -44,4 +45,8 @@ Option	| Default | Explanation
 
 # License
 
-This tool is released under GPL v3 but it uses parts of Stormlib which is released under MIT, Zopfli which is released under Apache v2.0 and miniz which is released under public domain.
+This tool is released under GPL v3 but it uses parts of
+- Apache Portable Runtime which is released under Apache v2.0
+- miniz which is released under public domain.
+- Stormlib which is released under MIT
+- Zopfli which is released under Apache v2.0

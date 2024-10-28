@@ -1,4 +1,5 @@
 ﻿#include <sys/stat.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <string.h>
@@ -52,6 +53,7 @@ struct {
     
     size_t mpqShift;
     size_t blockSize;
+    int useCache;
     ZopfliOptions zopfli_options;
     
     struct {
@@ -65,6 +67,9 @@ struct {
     
     listfile_t listfile;
 } globals;
+
+static const char Base64URLTable[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 int IsDelim(char c, char *delim){
     for(; *delim; delim++){
@@ -457,6 +462,189 @@ void PackFile(unsigned char *content, size_t contentSize, size_t bufferSize, uns
     
 }
 
+// Helper function to encode data in Base64url format
+void Base64URLEncode(char *encoded, const char *string, int len) {
+  /* Original source code taken from
+   * https://svn.apache.org/repos/asf/apr/apr/trunk/encoding/apr_base64.c
+   *
+   * Changes by Michel Lang <michellang@gmail.com>:
+   * - Replaced char 62 ('+') with '-'
+   * - Replaced char 63 ('/') with '_'
+   * - Removed padding with '=' at the end of the string
+   * - Changed return type to void for Base64decode and Base64encode
+   * - Added wrappers for R
+   *
+   */
+  /*
+   * base64.c:  base64 encoding and decoding functions
+   *
+   * ====================================================================
+   *    Licensed to the Apache Software Foundation (ASF) under one
+   *    or more contributor license agreements.  See the NOTICE file
+   *    distributed with this work for additional information
+   *    regarding copyright ownership.  The ASF licenses this file
+   *    to you under the Apache License, Version 2.0 (the
+   *    "License"); you may not use this file except in compliance
+   *    with the License.  You may obtain a copy of the License at
+   *
+   *      http://www.apache.org/licenses/LICENSE-2.0
+   *
+   *    Unless required by applicable law or agreed to in writing,
+   *    software distributed under the License is distributed on an
+   *    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+   *    KIND, either express or implied.  See the License for the
+   *    specific language governing permissions and limitations
+   *    under the License.
+   * ====================================================================
+   */
+
+    int i;
+    char *p = encoded;
+
+    for (i = 0; i < len - 2; i += 3) {
+        *p++ = Base64URLTable[(string[i] >> 2) & 0x3F];
+        *p++ = Base64URLTable[((string[i] & 0x3) << 4) | ((int) (string[i + 1] & 0xF0) >> 4)];
+        *p++ = Base64URLTable[((string[i + 1] & 0xF) << 2) | ((int) (string[i + 2] & 0xC0) >> 6)];
+        *p++ = Base64URLTable[string[i + 2] & 0x3F];
+    }
+
+    if (i < len) {
+        *p++ = Base64URLTable[(string[i] >> 2) & 0x3F];
+        if (i == (len - 1)) {
+            *p++ = Base64URLTable[((string[i] & 0x3) << 4)];
+        } else {
+            *p++ = Base64URLTable[((string[i] & 0x3) << 4) | ((int) (string[i + 1] & 0xF0) >> 4)];
+            *p++ = Base64URLTable[((string[i + 1] & 0xF) << 2)];
+        }
+    }
+
+    *p++ = '\0';
+}
+
+// Function to sanitize the path using Base64url encoding
+void SanitizePath(const char *path, char *sanitized_path) {
+    // Get the length of the input path
+    int path_len = strlen(path);
+
+    // Encode the path into Base64url format
+    Base64URLEncode(sanitized_path, (const char *)path, path_len);
+}
+
+void WriteLE32(FILE *file, uint32_t value) {
+    fwrite(&value, sizeof(uint32_t), 1, file);
+}
+
+uint32_t ReadLE32(FILE *file) {
+    uint32_t value;
+    fread(&value, sizeof(uint32_t), 1, file);
+    return value;
+}
+
+void InitCache() {
+    struct stat st = {0};
+    
+    if (stat("./cache", &st) == -1) {
+        if (mkdir("./cache") != 0) {
+            perror("Failed to create cache directory");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void CachePacked(char *path, size_t insize, size_t outsize, uint32_t flags, unsigned char *content, unsigned char *out){
+    // Sanitize the input path by replacing slashes with hyphens.
+    char sanitized_path[1024];
+    SanitizePath(path, sanitized_path);
+
+    // Construct the full file path: "{CWD}/cache/{sanitized_path}"
+    char full_path[1024];
+    snprintf(full_path, sizeof(full_path), "./cache/%s", sanitized_path);
+
+    // Open the file for writing (create if not exists, overwrite if exists)
+    FILE *file = fopen(full_path, "wb");
+    if (!file) {
+        perror("Failed to open cache file");
+        return;
+    }
+
+    // Write insize, outsize, and flags in little-endian format
+    WriteLE32(file, (uint32_t)insize);
+    WriteLE32(file, (uint32_t)outsize);
+    WriteLE32(file, flags);
+
+    // Write the length of the file path in little-endian format
+    uint32_t path_len = (uint32_t)strlen(sanitized_path);
+    WriteLE32(file, path_len);
+
+    // Write the sanitized file path followed by a newline
+    fwrite(sanitized_path, sizeof(char), path_len, file);
+    fputc('\n', file);
+
+    // Write the content followed by the out buffer
+    fwrite(content, sizeof(unsigned char), insize, file);
+    fwrite(out, sizeof(unsigned char), outsize, file);
+
+    // Close the file
+    fclose(file);
+}
+
+int ReadCache(char *path, size_t insize, unsigned char *content, unsigned char *out, size_t *outsize, uint32_t *flags){
+    // Sanitize the input path by replacing slashes with hyphens
+    char sanitized_path[1024];
+    SanitizePath(path, sanitized_path);
+
+    // Construct the full file path: "{CWD}/cache/{sanitized_path}"
+    char full_path[1024];
+    snprintf(full_path, sizeof(full_path), "./cache/%s", sanitized_path);
+
+    // Check if the file exists
+    struct stat st;
+    if (stat(full_path, &st) != 0) {
+        return 0;  // File does not exist
+    }
+
+    // Open the file for reading
+    FILE *file = fopen(full_path, "rb");
+    if (!file) {
+        perror("Failed to open cache file");
+        return 0;  // If we cannot open the file, treat it as not existing
+    }
+
+    // Read insize from the file and compare with input
+    uint32_t cached_insize = ReadLE32(file);
+    if (cached_insize != (uint32_t)insize) {
+        fclose(file);
+        return 0;  // insize does not match
+    }
+
+    // Read outsize and flags from the file and output them
+    *outsize = ReadLE32(file);
+    *flags = ReadLE32(file);
+
+    // Read the length of the cached file path
+    uint32_t path_len = ReadLE32(file);
+
+    // Skip the stored file path and newline
+    fseek(file, path_len + 1, SEEK_CUR);  // Skip file path and newline
+
+    // Compare the content
+    unsigned char *cached_content = (unsigned char *)malloc(insize);
+    fread(cached_content, sizeof(unsigned char), insize, file);
+    if (memcmp(cached_content, content, insize) != 0) {
+        free(cached_content);
+        fclose(file);
+        return 0;  // Content does not match
+    }
+    free(cached_content);
+
+    // Read the out buffer from the file
+    fread(out, sizeof(unsigned char), *outsize, file);
+
+    // Close the file and return 1 (match found)
+    fclose(file);
+    return 1;
+}
+
 void PackFiles(void *arguments){
     int threadId = *(int*)arguments;
     char **path;
@@ -472,8 +660,17 @@ void PackFiles(void *arguments){
         size_t sotSize = 4*(1+ ceil( ((float)insize)/globals.blockSize ));
         unsigned char *out = malloc(insize + sotSize);
         uint32_t flags;
+        int foundCache = 0;
 
-        PackFile((unsigned char*)content, insize, insize + sotSize, out, &outsize, &flags);
+        if (globals.useCache) {
+            foundCache = ReadCache(*path, insize, (unsigned char*)content, out, &outsize, &flags);
+        }
+        if (foundCache == 0){
+            PackFile((unsigned char*)content, insize, insize + sotSize, out, &outsize, &flags);
+            if (globals.useCache){
+                CachePacked(*path, insize, outsize, flags, (unsigned char*)content, out);
+            }
+        }
 
         Sys_Lock(globals.lock);
 
@@ -610,12 +807,14 @@ void PrintHelp(char *name){
     printf("  --shift-size, -s:       Sets the Blocksize to 512*2^shiftsize. Default shiftsize: 15\n");
     printf("  --block-splitting-max:  Maximum amount of blocks to split into (0 for unlimited, but this can give\n"
            "                          extreme results that hurt compression on some files). Default value: 15.\n");
+    printf("  --cache, -c:            Use an in-disk cache to speed up later executions.\n");
     printf("  --help, -h:             Prints this help.\n");
 }
 
 int main(int argc, char **argv){
     size_t threads = 2;
     int shift = 15;
+    int cache = 0;
     char *external_listfile_path = NULL, *inmpq_path, *outmpq_path;
     
     globals.zopfli_options.verbose = 0;
@@ -681,7 +880,8 @@ int main(int argc, char **argv){
                 printf("The number of block must be betwee 1 and 15\n");
                 exit(0);
             }
-            
+        } else if (!strcmp("--cache", argv[arg]) || !strcmp("-c", argv[arg])){
+            cache = 1;
         } else if (!strcmp("--help", argv[arg]) || !strcmp("-h", argv[arg])){
             PrintHelp(argv[0]);
             exit(0);
@@ -699,11 +899,15 @@ int main(int argc, char **argv){
     
     globals.mpqShift = (size_t)shift;
     globals.blockSize = 512 * (1 << globals.mpqShift);
+    globals.useCache = cache;
     
     globals.mpq_file = fopen(outmpq_path, "wb");
     if(globals.mpq_file == NULL){
         fprintf(stderr, "Couldn't open file '%s'\n", outmpq_path);
         exit(1);
+    }
+    if (cache == 1){
+        InitCache();
     }
 
     PrepareCryptTable();
