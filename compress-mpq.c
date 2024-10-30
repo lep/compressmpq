@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <sys/types.h>
+#include <utime.h>
 
 #include "zopfli/zopfli.h"
 #include "miniz.h"
@@ -20,6 +22,7 @@
 #include "crypto.h"
 #include "queue.h"
 #include "listfile.h"
+#include "lonesha256.h"
 
 
 #if defined(_WIN32)
@@ -468,7 +471,7 @@ void PackFile(unsigned char *content, size_t contentSize, size_t bufferSize, uns
     
 }
 
-// Helper function to encode data in Base64url format
+// Helper function to encode data in Base64url format (RFC 4648)
 void Base64URLEncode(char *encoded, const char *string, int len) {
   /* Original source code taken from
    * https://svn.apache.org/repos/asf/apr/apr/trunk/encoding/apr_base64.c
@@ -477,9 +480,10 @@ void Base64URLEncode(char *encoded, const char *string, int len) {
    * - Replaced char 62 ('+') with '-'
    * - Replaced char 63 ('/') with '_'
    * - Removed padding with '=' at the end of the string
-   * - Changed return type to void for Base64decode and Base64encode
-   * - Added wrappers for R
+   * - Changed return type to void for Base64decode
    *
+   * Changes by Leonardo Julca <ivojulca@hotmail.com>:
+   * - Renamed to Base64URLEncode
    */
   /*
    * base64.c:  base64 encoding and decoding functions
@@ -527,15 +531,6 @@ void Base64URLEncode(char *encoded, const char *string, int len) {
     *p++ = '\0';
 }
 
-// Function to sanitize the path using Base64url encoding
-void SanitizePath(const char *path, char *sanitized_path) {
-    // Get the length of the input path
-    int path_len = strlen(path);
-
-    // Encode the path into Base64url format
-    Base64URLEncode(sanitized_path, (const char *)path, path_len);
-}
-
 void WriteLE32(FILE *file, uint32_t value) {
     fwrite(&value, sizeof(uint32_t), 1, file);
 }
@@ -557,97 +552,77 @@ void InitCache() {
     }
 }
 
-void CachePacked(char *path, size_t insize, size_t outsize, uint32_t flags, unsigned char *content, unsigned char *out){
-    // Sanitize the input path by replacing slashes with hyphens.
-    char sanitized_path[1024];
-    SanitizePath(path, sanitized_path);
+void CachePacked(const char *path, const unsigned char *out, const size_t outsize, const unsigned char *content, const size_t insize){
+    char cache_path[1024];
 
-    // Construct the full file path: "{CWD}/cache/{sanitized_path}"
-    char full_path[1024];
-    snprintf(full_path, sizeof(full_path), "./cache/%s", sanitized_path);
+    {
+      char in_archive_path64[971];
+      char content_hash64[45];
+      char content_hash[32];
+
+      // Construct the full file path: "{CWD}/cache/{content_hash64}-{in_archive_path64}"
+      lonesha256(content_hash, content, insize);
+      Base64URLEncode(content_hash64, content_hash, sizeof(content_hash));
+      Base64URLEncode(in_archive_path64, path, strlen(path));
+      snprintf(cache_path, sizeof(cache_path), "./cache/%s-%s", content_hash64, in_archive_path64);
+    }
 
     // Open the file for writing (create if not exists, overwrite if exists)
-    FILE *file = fopen(full_path, "wb");
-    if (!file) {
-        perror("Failed to open cache file");
+    FILE *file = fopen(cache_path, "wb");
+    if(!file) {
+        perror("Failed to update cache file");
         return;
     }
 
-    // Write insize, outsize, and flags in little-endian format
-    WriteLE32(file, (uint32_t)insize);
-    WriteLE32(file, (uint32_t)outsize);
-    WriteLE32(file, flags);
-
-    // Write the length of the file path in little-endian format
-    uint32_t path_len = (uint32_t)strlen(sanitized_path);
-    WriteLE32(file, path_len);
-
-    // Write the sanitized file path followed by a newline
-    fwrite(sanitized_path, sizeof(char), path_len, file);
-    fputc('\n', file);
-
-    // Write the content followed by the out buffer
-    fwrite(content, sizeof(unsigned char), insize, file);
-    fwrite(out, sizeof(unsigned char), outsize, file);
-
-    // Close the file
+    int success = 0;
+    if(fwrite(out, sizeof(unsigned char), outsize, file) == outsize) {
+        success = 1;
+    }
     fclose(file);
+
+    if(success == 0) {
+        remove(cache_path);
+        perror("Failed to update cache file");
+    }    
 }
 
-int ReadCache(char *path, size_t insize, unsigned char *content, unsigned char *out, size_t *outsize, uint32_t *flags){
-    // Sanitize the input path by replacing slashes with hyphens
-    char sanitized_path[1024];
-    SanitizePath(path, sanitized_path);
+int ReadCache(char *path, const size_t insize, const unsigned char *content, unsigned char *out, size_t *outsize, uint32_t *flags){
+    char cache_path[1024];
 
-    // Construct the full file path: "{CWD}/cache/{sanitized_path}"
-    char full_path[1024];
-    snprintf(full_path, sizeof(full_path), "./cache/%s", sanitized_path);
+    {
+      char in_archive_path64[971];
+      char content_hash64[45];
+      char content_hash[32];
 
-    // Check if the file exists
-    struct stat st;
-    if (stat(full_path, &st) != 0) {
-        return 0;  // File does not exist
+      // Construct the full file path: "{CWD}/cache/{content_hash64}-{in_archive_path64}"
+      lonesha256(content_hash, content, insize);
+      Base64URLEncode(content_hash64, content_hash, sizeof(content_hash));
+      Base64URLEncode(in_archive_path64, path, strlen(path));
+      snprintf(cache_path, sizeof(cache_path), "./cache/%s-%s", content_hash64, in_archive_path64);
     }
 
-    // Open the file for reading
-    FILE *file = fopen(full_path, "rb");
+    // For reading and writing, only if it exists.
+    FILE *file = fopen(cache_path, "rb+");
     if (!file) {
-        perror("Failed to open cache file");
-        return 0;  // If we cannot open the file, treat it as not existing
+        return 0;
     }
 
-    // Read insize from the file and compare with input
-    uint32_t cached_insize = ReadLE32(file);
-    if (cached_insize != (uint32_t)insize) {
-        fclose(file);
-        return 0;  // insize does not match
-    }
+    fseek(file, 0, SEEK_END);
+    *outsize = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
-    // Read outsize and flags from the file and output them
-    *outsize = ReadLE32(file);
-    *flags = ReadLE32(file);
-
-    // Read the length of the cached file path
-    uint32_t path_len = ReadLE32(file);
-
-    // Skip the stored file path and newline
-    fseek(file, path_len + 1, SEEK_CUR);  // Skip file path and newline
-
-    // Compare the content
-    unsigned char *cached_content = (unsigned char *)malloc(insize);
-    fread(cached_content, sizeof(unsigned char), insize, file);
-    if (memcmp(cached_content, content, insize) != 0) {
-        free(cached_content);
-        fclose(file);
-        return 0;  // Content does not match
-    }
-    free(cached_content);
-
-    // Read the out buffer from the file
     fread(out, sizeof(unsigned char), *outsize, file);
-
-    // Close the file and return 1 (match found)
     fclose(file);
+
+    // TODO:
+    // Validate file content, but collisions are unlikely
+
+    // Match flags set by PackFile
+    *flags = FLAG_FILE_COMPRESSED; 
+
+    // Bump atime, mtime
+    utime(cache_path, NULL);
+
     return 1;
 }
 
@@ -668,13 +643,13 @@ void PackFiles(void *arguments){
         uint32_t flags;
         int foundCache = 0;
 
-        if (globals.useCache) {
-            foundCache = ReadCache(*path, insize, (unsigned char*)content, out, &outsize, &flags);
+        if(globals.useCache) {
+            foundCache = ReadCache(*path, (const size_t)insize, (const unsigned char*)content, out, &outsize, &flags);
         }
-        if (foundCache == 0){
+        if(foundCache == 0){
             PackFile((unsigned char*)content, insize, insize + sotSize, out, &outsize, &flags);
             if (globals.useCache){
-                CachePacked(*path, insize, outsize, flags, (unsigned char*)content, out);
+                CachePacked(*path, out, outsize, content, insize);
             }
         }
 
