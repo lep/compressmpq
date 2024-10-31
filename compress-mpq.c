@@ -567,6 +567,22 @@ void InitCache() {
     }
 }
 
+int CreateCacheLock(){
+    int fd = -1;
+    int tries = 100;
+    while (tries--) {
+        fd = open("./cache/.lockfile", O_CREAT | O_EXCL | O_RDWR, 0666);
+        if (fd != -1) return fd;
+        sleep_ms(10);
+    }
+    return fd;
+}
+
+void ReleaseCacheLock(int fd){
+    close(fd);
+    unlink("./cache/.lockfile");
+}
+
 void CachePacked(const char *path, const unsigned char *out, const size_t outsize, const unsigned char *content, const size_t insize){
     char cache_path[1024];
 
@@ -582,10 +598,17 @@ void CachePacked(const char *path, const unsigned char *out, const size_t outsiz
       snprintf(cache_path, sizeof(cache_path), "./cache/%s-%s", content_hash64, in_archive_path64);
     }
 
+    int lock = CreateCacheLock();
+    if (lock == -1){
+        perror("Failed to update cache file");
+        return;
+    }
+
     // Open the file for writing (create if not exists, overwrite if exists)
     FILE *file = fopen(cache_path, "wb");
     if(!file) {
         perror("Failed to update cache file");
+        ReleaseCacheLock(lock);
         return;
     }
 
@@ -598,7 +621,8 @@ void CachePacked(const char *path, const unsigned char *out, const size_t outsiz
     if(success == 0) {
         remove(cache_path);
         perror("Failed to update cache file");
-    }    
+    }
+    ReleaseCacheLock(lock);
 }
 
 int ReadCache(char *path, const size_t insize, const unsigned char *content, unsigned char *out, size_t *outsize, uint32_t *flags){
@@ -616,9 +640,16 @@ int ReadCache(char *path, const size_t insize, const unsigned char *content, uns
       snprintf(cache_path, sizeof(cache_path), "./cache/%s-%s", content_hash64, in_archive_path64);
     }
 
+    int lock = CreateCacheLock();
+    if (lock == -1){
+        perror("Cache is locked (./cache/.lockfile exists)");
+        return 0;
+    }
+
     // For reading and writing, only if it exists.
     FILE *file = fopen(cache_path, "rb+");
     if (!file) {
+        ReleaseCacheLock(lock);
         return 0;
     }
 
@@ -637,6 +668,8 @@ int ReadCache(char *path, const size_t insize, const unsigned char *content, uns
 
     // Bump atime, mtime
     utime(cache_path, NULL);
+
+    ReleaseCacheLock(lock);
 
     return 1;
 }
