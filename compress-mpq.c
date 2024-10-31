@@ -11,6 +11,17 @@
 #include <sys/types.h>
 #include <utime.h>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#elif _POSIX_C_SOURCE >= 199309L
+#include <time.h>   // for nanosleep
+#else
+#include <unistd.h> // for usleep
+#endif
+
 #include "zopfli/zopfli.h"
 #include "miniz.h"
 #include "Adpcm/adpcm.h"
@@ -23,7 +34,6 @@
 #include "queue.h"
 #include "listfile.h"
 #include "lonesha256.h"
-
 
 #if defined(_WIN32)
 #include <direct.h>
@@ -79,6 +89,21 @@ struct {
 
 static const char Base64URLTable[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+void sleep_ms(int milliseconds){ // cross-platform sleep function
+#ifdef WIN32
+    Sleep(milliseconds);
+#elif _POSIX_C_SOURCE >= 199309L
+    struct timespec ts;
+    ts.tv_sec = milliseconds / 1000;
+    ts.tv_nsec = (milliseconds % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+#else
+    if (milliseconds >= 1000)
+      sleep(milliseconds / 1000);
+    usleep((milliseconds % 1000) * 1000);
+#endif
+}
 
 int IsDelim(char c, char *delim){
     for(; *delim; delim++){
