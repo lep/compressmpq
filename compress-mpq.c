@@ -531,16 +531,6 @@ void Base64URLEncode(char *encoded, const char *string, int len) {
     *p++ = '\0';
 }
 
-void WriteLE32(FILE *file, uint32_t value) {
-    fwrite(&value, sizeof(uint32_t), 1, file);
-}
-
-uint32_t ReadLE32(FILE *file) {
-    uint32_t value;
-    fread(&value, sizeof(uint32_t), 1, file);
-    return value;
-}
-
 void InitCache() {
     struct stat st = {0};
     
