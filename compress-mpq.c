@@ -480,7 +480,7 @@ void Base64URLEncode(char *encoded, const char *string, int len) {
    * - Replaced char 62 ('+') with '-'
    * - Replaced char 63 ('/') with '_'
    * - Removed padding with '=' at the end of the string
-   * - Changed return type to void for Base64decode
+   * - Changed return type to void for Base64encode
    *
    * Changes by Leonardo Julca <ivojulca@hotmail.com>:
    * - Renamed to Base64URLEncode
