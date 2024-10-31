@@ -568,13 +568,13 @@ void InitCache() {
 }
 
 #ifdef _WIN32
-HANDLE CreateCacheLock() {
+HANDLE CreateCacheLock(const char *path) {
     HANDLE hFile = INVALID_HANDLE_VALUE;
     int tries = 100;
 
     while (tries--) {
         hFile = CreateFile(
-            "./cache/.lockfile", GENERIC_READ | GENERIC_WRITE, 0, NULL,
+            path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
             CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL
         );
 
@@ -592,17 +592,17 @@ HANDLE CreateCacheLock() {
     return hFile;
 }
 
-void ReleaseCacheLock(HANDLE hFile) {
+void ReleaseCacheLock(HANDLE hFile, const char *path) {
     CloseHandle(hFile);
-    DeleteFile("./cache/.lockfile");
+    DeleteFile(path);
 }
 #else
-int CreateCacheLock() {
+int CreateCacheLock(const char *path) {
     int fd = -1;
     int tries = 100;
 
     while (tries--) {
-        fd = open("./cache/.lockfile", O_CREAT | O_EXCL | O_RDWR, 0666);
+        fd = open(path, O_CREAT | O_EXCL | O_RDWR, 0666);
         if (fd != -1) return fd;
         sleep_ms(10);
     }
@@ -610,18 +610,19 @@ int CreateCacheLock() {
     return fd;
 }
 
-void ReleaseCacheLock(int fd){
+void ReleaseCacheLock(int fd, const char *path){
     close(fd);
-    unlink("./cache/.lockfile");
+    unlink(path);
 }
 
 #endif
 
 void CachePacked(const char *path, const unsigned char *out, const size_t outsize, const unsigned char *content, const size_t insize){
-    char cache_path[1024];
+    char lock_path[1024];
+    char cache_path[1019];
 
     {
-      char in_archive_path64[971];
+      char in_archive_path64[966];
       char content_hash64[45];
       char content_hash[32];
 
@@ -630,16 +631,17 @@ void CachePacked(const char *path, const unsigned char *out, const size_t outsiz
       Base64URLEncode(content_hash64, content_hash, sizeof(content_hash));
       Base64URLEncode(in_archive_path64, path, strlen(path));
       snprintf(cache_path, sizeof(cache_path), "./cache/%s-%s", content_hash64, in_archive_path64);
+      snprintf(lock_path, sizeof(lock_path), "%s.lock", cache_path);
     }
 
 #ifdef _WIN32
-    HANDLE lock = CreateCacheLock();
+    HANDLE lock = CreateCacheLock(lock_path);
     if (lock == INVALID_HANDLE_VALUE){
 #else
-    int lock = CreateCacheLock();
+    int lock = CreateCacheLock(lock_path);
     if (lock == -1){
 #endif
-        perror("Failed to update cache file");
+        printf("Cache file is locked (%s)", lock_path);
         return;
     }
 
@@ -647,7 +649,7 @@ void CachePacked(const char *path, const unsigned char *out, const size_t outsiz
     FILE *file = fopen(cache_path, "wb");
     if(!file) {
         perror("Failed to update cache file");
-        ReleaseCacheLock(lock);
+        ReleaseCacheLock(lock, lock_path);
         return;
     }
 
@@ -661,14 +663,15 @@ void CachePacked(const char *path, const unsigned char *out, const size_t outsiz
         remove(cache_path);
         perror("Failed to update cache file");
     }
-    ReleaseCacheLock(lock);
+    ReleaseCacheLock(lock, lock_path);
 }
 
 int ReadCache(char *path, const size_t insize, const unsigned char *content, unsigned char *out, size_t *outsize, uint32_t *flags){
-    char cache_path[1024];
+    char lock_path[1024];
+    char cache_path[1019];
 
     {
-      char in_archive_path64[971];
+      char in_archive_path64[966];
       char content_hash64[45];
       char content_hash[32];
 
@@ -677,23 +680,24 @@ int ReadCache(char *path, const size_t insize, const unsigned char *content, uns
       Base64URLEncode(content_hash64, content_hash, sizeof(content_hash));
       Base64URLEncode(in_archive_path64, path, strlen(path));
       snprintf(cache_path, sizeof(cache_path), "./cache/%s-%s", content_hash64, in_archive_path64);
+      snprintf(lock_path, sizeof(lock_path), "%s.lock", cache_path);
     }
 
 #ifdef _WIN32
-    HANDLE lock = CreateCacheLock();
+    HANDLE lock = CreateCacheLock(lock_path);
     if (lock == INVALID_HANDLE_VALUE){
 #else
-    int lock = CreateCacheLock();
+    int lock = CreateCacheLock(lock_path);
     if (lock == -1){
 #endif
-        perror("Cache is locked (./cache/.lockfile exists)");
+        printf("Cache file is locked (%s)", lock_path);
         return 0;
     }
 
     // For reading and writing, only if it exists.
     FILE *file = fopen(cache_path, "rb+");
     if (!file) {
-        ReleaseCacheLock(lock);
+        ReleaseCacheLock(lock, lock_path);
         return 0;
     }
 
@@ -713,7 +717,7 @@ int ReadCache(char *path, const size_t insize, const unsigned char *content, uns
     // Bump atime, mtime
     utime(cache_path, NULL);
 
-    ReleaseCacheLock(lock);
+    ReleaseCacheLock(lock, lock_path);
 
     return 1;
 }
