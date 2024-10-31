@@ -47,6 +47,7 @@ Option	| Default | Explanation
 
 This tool is released under GPL v3 but it uses parts of
 - Apache Portable Runtime which is released under Apache v2.0
+- lonesha256 which is released under CC0
 - miniz which is released under public domain.
 - Stormlib which is released under MIT
 - Zopfli which is released under Apache v2.0
