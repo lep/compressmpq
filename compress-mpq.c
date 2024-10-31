@@ -567,14 +567,46 @@ void InitCache() {
     }
 }
 
-int CreateCacheLock(){
+#ifdef _WIN32
+HANDLE CreateCacheLock() {
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    int tries = 100;
+
+    while (tries--) {
+        hFile = CreateFile(
+            "./cache/.lockfile", GENERIC_READ | GENERIC_WRITE, 0, NULL,
+            CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL
+        );
+
+        if (hFile != INVALID_HANDLE_VALUE) {
+            return hFile;
+        }
+
+        if (GetLastError() == ERROR_FILE_EXISTS) {
+            sleep_ms(10);
+        } else {
+            break;
+        }
+    }
+
+    return hFile;
+}
+
+void ReleaseCacheLock(HANDLE hFile) {
+    CloseHandle(hFile);
+    DeleteFile("./cache/.lockfile");
+}
+#else
+int CreateCacheLock() {
     int fd = -1;
     int tries = 100;
+
     while (tries--) {
         fd = open("./cache/.lockfile", O_CREAT | O_EXCL | O_RDWR, 0666);
         if (fd != -1) return fd;
         sleep_ms(10);
     }
+
     return fd;
 }
 
@@ -582,6 +614,8 @@ void ReleaseCacheLock(int fd){
     close(fd);
     unlink("./cache/.lockfile");
 }
+
+#endif
 
 void CachePacked(const char *path, const unsigned char *out, const size_t outsize, const unsigned char *content, const size_t insize){
     char cache_path[1024];
@@ -598,8 +632,13 @@ void CachePacked(const char *path, const unsigned char *out, const size_t outsiz
       snprintf(cache_path, sizeof(cache_path), "./cache/%s-%s", content_hash64, in_archive_path64);
     }
 
+#ifdef _WIN32
+    HANDLE lock = CreateCacheLock();
+    if (lock == INVALID_HANDLE_VALUE){
+#else
     int lock = CreateCacheLock();
     if (lock == -1){
+#endif
         perror("Failed to update cache file");
         return;
     }
@@ -640,8 +679,13 @@ int ReadCache(char *path, const size_t insize, const unsigned char *content, uns
       snprintf(cache_path, sizeof(cache_path), "./cache/%s-%s", content_hash64, in_archive_path64);
     }
 
+#ifdef _WIN32
+    HANDLE lock = CreateCacheLock();
+    if (lock == INVALID_HANDLE_VALUE){
+#else
     int lock = CreateCacheLock();
     if (lock == -1){
+#endif
         perror("Cache is locked (./cache/.lockfile exists)");
         return 0;
     }
