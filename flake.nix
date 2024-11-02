@@ -1,42 +1,31 @@
 {
-    inputs = {
-        nixpkgs.url = "github:NixOS/nixpkgs";
-        flake-utils.url = "github:numtide/flake-utils";
+  inputs = { systems.url = "github:nix-systems/default"; };
+
+  outputs = { self, nixpkgs, systems }:
+    let
+      eachSystem = nixpkgs.lib.genAttrs (import systems);
+      compress-mpq-drv = pkgs:
+        pkgs.stdenv.mkDerivation {
+          name = "compress-mpq";
+          src = self;
+          buildInputs = [ pkgs.gnumake ];
+          buildPhase = "make compress-mpq";
+          installPhase = "install -Dt $out/bin compress-mpq";
+        };
+    in rec {
+      packages = eachSystem (system: rec {
+        compress-mpq = compress-mpq-drv (import nixpkgs { inherit system; });
+        default = compress-mpq;
+      });
+
+      apps = eachSystem (system: rec {
+        compress-mpq = {
+          program = "${packages.${system}.compress-mpq}/bin/compress-mpq";
+          type = "app";
+        };
+
+        default = compress-mpq;
+      });
     };
-
-    outputs = { self, nixpkgs, flake-utils }:
-        flake-utils.lib.eachDefaultSystem (system:
-            let pkgs = import nixpkgs { inherit system; };
-                packageName = "compress-mpq";
-                buildInputs = [
-                    pkgs.gnumake
-                ];
-
-                drv-args = {
-                        name = packageName;
-                        src = self;
-                        inherit buildInputs;
-
-                        buildPhase = "make compress-mpq";
-                        installPhase = ''
-                            mkdir -p $out/bin
-                            install -t $out/bin compress-mpq
-                        '';
-                    };
-		drv = pkgs.stdenv.mkDerivation drv-args;
-            in rec {
-		apps.default = {
-		    type = "app";
-		    program = "${drv}/bin/compress-mpq";
-		};
-		apps.compressmpq = apps.default;
-                packages = {
-		    default = drv;
-                    ${packageName} = drv;
-                };
-
-                defaultPackage = packages.${packageName};
-            }
-        );
 }
-    
+
