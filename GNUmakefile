@@ -24,6 +24,7 @@ release: CFLAGS = -O3 -std=c99 -Doff64_t=_off64_t -DPTW32_STATIC_LIB -DLONESHA25
 release: CXXFLAGS = -O3 -Doff64_t=_off64_t -DPTW32_STATIC_LIB -DLONESHA256_STATIC -FORCEWIN
 release: CC = i686-w64-mingw32-gcc
 release: CXX = i686-w64-mingw32-g++
+release: LDFLAGS = -lm -pthread -lstdc++ --static
 release: compress-mpq
 
 compress-mpq: $(OBJS) $(ZOPFLI_OBJS) $(ENCODING_OBJS)
