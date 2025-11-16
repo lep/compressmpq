@@ -13,7 +13,7 @@ ENCODING_OBJS := Adpcm/adpcm.o Huffman/huff.o Pklib/pklib.o Pklib/explode.o mini
 
 OBJS := crypto.o table.o listfile.o queue.o thread.o compress-mpq.o
 
-.PHONY: clean all prof debug
+.PHONY: clean all prof debug install
 all: compress-mpq
 
 prof: CFLAGS = -w -pg -std=c99
@@ -33,3 +33,7 @@ compress-mpq: $(OBJS) $(ZOPFLI_OBJS) $(ENCODING_OBJS)
 clean:
 	rm -f $(OBJS) $(ZOPFLI_OBJS) $(ENCODING_OBJS) compress-mpq
 
+install:
+	mkdir -p $(PREFIX)/bin
+	[ -f compress-mpq ] && cp compress-mpq $(PREFIX)/bin || true
+	[ -f compress-mpq.exe ] && cp compress-mpq.exe $(PREFIX)/bin || true
